@@ -115,6 +115,8 @@ Command Examples:
 ./rootAVD.sh ListAllAVDs
 ./rootAVD.sh InstallApps
 ./rootAVD.sh --interactive
+./rootAVD.sh --create 35 playstore arm64-v8a
+./rootAVD.sh --create 34 google_apis x86_64
 
 ./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img
 ./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img FAKEBOOTIMG
@@ -397,6 +399,12 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 * [rootAVD.sh] - Added Interactive AVD Selector (`--interactive` or `-i` argument)
 	* Shows all available AVDs in a numbered list
 	* Allows selecting patching method and options interactively
+* [rootAVD.sh] - Added Create and Root AVD feature (`--create` argument)
+	* Downloads system image if not installed
+	* Creates AVD automatically (with fallback for SDK tools issues)
+	* Starts emulator and waits for boot
+	* Roots the AVD with appropriate Magisk version
+	* Example: `./rootAVD.sh --create 35 playstore arm64-v8a`
 * [rootAVD.sh] - Added Android 15 (API 35) and Android 16 (API 36 / Baklava) support
 * [rootAVD.sh] - Added automatic Magisk version selection based on Android API level
 	* Uses Magisk30.zip for Android 15+ (API 35+)

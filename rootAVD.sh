@@ -2903,6 +2903,418 @@ SelectAVDInteractive() {
 	return 0
 }
 
+CreateAndRootAVD() {
+	# This function creates an AVD from scratch, downloads system image if needed, and roots it
+	# Usage: CreateAndRootAVD API_LEVEL [playstore|google_apis] [ARCH]
+	# Example: CreateAndRootAVD 35 playstore arm64-v8a
+
+	if [ "$INEMULATOR" = "true" ]; then
+		echo "[!] This function cannot run inside an emulator"
+		return 1
+	fi
+
+	bold=$(tput bold 2>/dev/null) || bold=""
+	normal=$(tput sgr0 2>/dev/null) || normal=""
+
+	echo ""
+	echo "${bold}rootAVD - Create and Root AVD${normal}"
+	echo "=============================="
+	echo ""
+
+	# Parse arguments
+	local API_LEVEL="$1"
+	local VARIANT="${2:-playstore}"  # Default to playstore
+	local ARCH="${3:-}"              # Auto-detect if not specified
+
+	# Validate API level
+	if [ -z "$API_LEVEL" ]; then
+		echo "[!] Usage: ./rootAVD.sh --create API_LEVEL [playstore|google_apis] [ARCH]"
+		echo "[!] Example: ./rootAVD.sh --create 35 playstore arm64-v8a"
+		echo ""
+		echo "Available API levels: 29, 30, 31, 32, 33, 34, 35, 36"
+		echo "Variants: playstore (default), google_apis"
+		echo "Architectures: arm64-v8a (default for Apple Silicon), x86_64"
+		return 1
+	fi
+
+	# Normalize variant name
+	case "$VARIANT" in
+		playstore|play|ps)
+			VARIANT="google_apis_playstore"
+			VARIANT_SHORT="playstore"
+			;;
+		google_apis|apis|ga)
+			VARIANT="google_apis"
+			VARIANT_SHORT="google_apis"
+			;;
+		*)
+			echo "[!] Unknown variant: $VARIANT"
+			echo "[!] Use 'playstore' or 'google_apis'"
+			return 1
+			;;
+	esac
+
+	# Auto-detect architecture based on host
+	if [ -z "$ARCH" ]; then
+		case "$(uname -m)" in
+			arm64|aarch64)
+				ARCH="arm64-v8a"
+				;;
+			x86_64|amd64)
+				ARCH="x86_64"
+				;;
+			*)
+				ARCH="x86_64"
+				;;
+		esac
+		echo "[*] Auto-detected architecture: $ARCH"
+	fi
+
+	# Check for required tools
+	echo "[*] Checking for required SDK tools..."
+
+	# Find SDK tools
+	local SDKMANAGER=""
+	local AVDMANAGER=""
+	local EMULATOR=""
+
+	# Try common paths
+	for toolpath in \
+		"$ANDROIDHOME/cmdline-tools/latest/bin" \
+		"$ANDROIDHOME/cmdline-tools/bin" \
+		"$ANDROIDHOME/tools/bin" \
+		"/usr/local/bin" \
+		"$HOME/Android/Sdk/cmdline-tools/latest/bin" \
+		"$HOME/Library/Android/sdk/cmdline-tools/latest/bin"
+	do
+		[ -z "$SDKMANAGER" ] && [ -x "$toolpath/sdkmanager" ] && SDKMANAGER="$toolpath/sdkmanager"
+		[ -z "$AVDMANAGER" ] && [ -x "$toolpath/avdmanager" ] && AVDMANAGER="$toolpath/avdmanager"
+	done
+
+	for toolpath in \
+		"$ANDROIDHOME/emulator" \
+		"$ANDROIDHOME/tools" \
+		"/usr/local/bin" \
+		"$HOME/Android/Sdk/emulator" \
+		"$HOME/Library/Android/sdk/emulator"
+	do
+		[ -z "$EMULATOR" ] && [ -x "$toolpath/emulator" ] && EMULATOR="$toolpath/emulator"
+	done
+
+	# Fall back to PATH
+	[ -z "$SDKMANAGER" ] && SDKMANAGER=$(which sdkmanager 2>/dev/null)
+	[ -z "$AVDMANAGER" ] && AVDMANAGER=$(which avdmanager 2>/dev/null)
+	[ -z "$EMULATOR" ] && EMULATOR=$(which emulator 2>/dev/null)
+
+	if [ -z "$SDKMANAGER" ]; then
+		echo "[!] sdkmanager not found. Please install Android SDK Command-line Tools"
+		return 1
+	fi
+	if [ -z "$AVDMANAGER" ]; then
+		echo "[!] avdmanager not found. Please install Android SDK Command-line Tools"
+		return 1
+	fi
+	if [ -z "$EMULATOR" ]; then
+		echo "[!] emulator not found. Please install Android Emulator"
+		return 1
+	fi
+
+	echo "[-] sdkmanager: $SDKMANAGER"
+	echo "[-] avdmanager: $AVDMANAGER"
+	echo "[-] emulator: $EMULATOR"
+	echo ""
+
+	# Build system image package name
+	local SYSIMG_PKG="system-images;android-${API_LEVEL};${VARIANT};${ARCH}"
+	local SYSIMG_PATH="system-images/android-${API_LEVEL}/${VARIANT}/${ARCH}"
+
+	echo "[*] Target system image: $SYSIMG_PKG"
+
+	# Check if system image is installed
+	echo "[*] Checking if system image is installed..."
+	local SYSIMG_INSTALLED=$("$SDKMANAGER" --list_installed 2>/dev/null | grep -c "$SYSIMG_PKG" 2>/dev/null || echo "0")
+	SYSIMG_INSTALLED=$(echo "$SYSIMG_INSTALLED" | tr -d '[:space:]')
+	[ -z "$SYSIMG_INSTALLED" ] && SYSIMG_INSTALLED=0
+
+	if [ "$SYSIMG_INSTALLED" -eq 0 ]; then
+		echo "[!] System image not installed"
+		echo ""
+
+		# Check if it's available for download
+		local SYSIMG_AVAILABLE=$("$SDKMANAGER" --list 2>/dev/null | grep -c "$SYSIMG_PKG" 2>/dev/null || echo "0")
+		SYSIMG_AVAILABLE=$(echo "$SYSIMG_AVAILABLE" | tr -d '[:space:]')
+		[ -z "$SYSIMG_AVAILABLE" ] && SYSIMG_AVAILABLE=0
+
+		if [ "$SYSIMG_AVAILABLE" -eq 0 ]; then
+			echo "[!] System image not available for download: $SYSIMG_PKG"
+			echo ""
+			echo "Available system images for API $API_LEVEL:"
+			"$SDKMANAGER" --list 2>/dev/null | grep "system-images;android-${API_LEVEL}" | head -10
+			return 1
+		fi
+
+		echo "[*] System image available. Downloading..."
+		echo "[*] This may take a while depending on your internet connection..."
+		echo ""
+
+		# Accept licenses and download
+		yes | "$SDKMANAGER" --licenses > /dev/null 2>&1
+		"$SDKMANAGER" "$SYSIMG_PKG"
+
+		if [ $? -ne 0 ]; then
+			echo "[!] Failed to download system image"
+			return 1
+		fi
+
+		echo ""
+		echo "[+] System image downloaded successfully"
+	else
+		echo "[-] System image already installed"
+	fi
+
+	# Generate AVD name
+	local AVD_NAME="rootAVD_${API_LEVEL}_${VARIANT_SHORT}_${ARCH}"
+	AVD_NAME=$(echo "$AVD_NAME" | tr '-' '_')  # Replace hyphens with underscores
+
+	echo ""
+	echo "[*] AVD name: $AVD_NAME"
+
+	# Check if AVD already exists
+	local AVD_EXISTS=$("$AVDMANAGER" list avd 2>/dev/null | grep -c "Name: $AVD_NAME" 2>/dev/null || echo "0")
+	AVD_EXISTS=$(echo "$AVD_EXISTS" | tr -d '[:space:]' | head -c 1)
+	[ -z "$AVD_EXISTS" ] && AVD_EXISTS=0
+
+	if [ "$AVD_EXISTS" -eq 0 ]; then
+		echo "[*] Creating AVD..."
+
+		# Create AVD
+		local AVD_CREATE_OUTPUT
+		AVD_CREATE_OUTPUT=$(echo "no" | "$AVDMANAGER" create avd \
+			-n "$AVD_NAME" \
+			-k "$SYSIMG_PKG" \
+			-d "pixel" \
+			--force 2>&1)
+
+		if [ $? -ne 0 ]; then
+			echo "[!] Failed to create AVD via avdmanager"
+			echo ""
+			# Check for common issues
+			if echo "$AVD_CREATE_OUTPUT" | grep -q "SDK XML versions"; then
+				echo "[!] SDK tools version mismatch detected"
+				echo "[*] Attempting alternative AVD creation method..."
+
+				# Create AVD directory and config manually
+				local AVD_DIR="$HOME/.android/avd/${AVD_NAME}.avd"
+				local AVD_INI="$HOME/.android/avd/${AVD_NAME}.ini"
+
+				if [ ! -d "$AVD_DIR" ]; then
+					mkdir -p "$AVD_DIR"
+
+					# Create config.ini
+					cat > "$AVD_DIR/config.ini" << AVDCONFIG
+AvdId=$AVD_NAME
+PlayStore.enabled=$([ "$VARIANT" = "google_apis_playstore" ] && echo "true" || echo "false")
+abi.type=$ARCH
+avd.ini.encoding=UTF-8
+hw.accelerometer=yes
+hw.audioInput=yes
+hw.battery=yes
+hw.cpu.arch=$(echo $ARCH | sed 's/arm64-v8a/arm64/;s/x86_64/x86_64/')
+hw.cpu.ncore=4
+hw.dPad=no
+hw.device.hash2=MD5:3a0d234e85685ed3db1e9a309e3f377e
+hw.device.manufacturer=Google
+hw.device.name=pixel
+hw.gps=yes
+hw.gpu.enabled=yes
+hw.gpu.mode=auto
+hw.keyboard=yes
+hw.lcd.density=420
+hw.lcd.height=1920
+hw.lcd.width=1080
+hw.mainKeys=no
+hw.ramSize=2048
+hw.sdCard=yes
+hw.sensors.orientation=yes
+hw.sensors.proximity=yes
+hw.trackBall=no
+image.sysdir.1=$SYSIMG_PATH/
+skin.dynamic=yes
+skin.name=1080x1920
+skin.path=_no_skin
+tag.display=Google Play
+tag.id=$VARIANT
+AVDCONFIG
+
+					# Create the .ini file
+					cat > "$AVD_INI" << AVDINI
+avd.ini.encoding=UTF-8
+path=$AVD_DIR
+path.rel=avd/${AVD_NAME}.avd
+target=android-$API_LEVEL
+AVDINI
+
+					echo "[+] AVD created via manual configuration"
+				else
+					echo "[-] AVD directory already exists, using existing"
+				fi
+			else
+				echo "[!] Error details: $AVD_CREATE_OUTPUT"
+				echo ""
+				echo "[*] You can create the AVD manually in Android Studio:"
+				echo "    1. Open Android Studio -> Tools -> Device Manager"
+				echo "    2. Create Virtual Device -> Select 'Pixel'"
+				echo "    3. Select system image: Android $API_LEVEL ($VARIANT)"
+				echo "    4. Name it: $AVD_NAME"
+				echo ""
+				printf "Continue anyway if AVD exists in Android Studio? [y/N]: "
+				read -r continue_anyway
+				case "$continue_anyway" in
+					y|Y) echo "[*] Continuing..." ;;
+					*) return 1 ;;
+				esac
+			fi
+		else
+			echo "[+] AVD created successfully"
+		fi
+	else
+		echo "[-] AVD already exists"
+	fi
+
+	# Check if an emulator is already running
+	local RUNNING_EMUS=$(adb devices 2>/dev/null | grep -c "emulator" 2>/dev/null || echo "0")
+	RUNNING_EMUS=$(echo "$RUNNING_EMUS" | tr -d '[:space:]')
+	[ -z "$RUNNING_EMUS" ] && RUNNING_EMUS=0
+	local NEED_TO_START=true
+
+	if [ "$RUNNING_EMUS" -gt 0 ]; then
+		echo ""
+		echo "[!] An emulator is already running"
+		printf "Do you want to use the running emulator? [Y/n]: "
+		read -r use_running
+
+		case "$use_running" in
+			n|N)
+				echo "[*] Will start a new emulator instance"
+				;;
+			*)
+				NEED_TO_START=false
+				echo "[*] Using running emulator"
+				;;
+		esac
+	fi
+
+	if [ "$NEED_TO_START" = true ]; then
+		echo ""
+		echo "[*] Starting emulator..."
+		echo "[*] Command: $EMULATOR -avd $AVD_NAME -no-snapshot-load"
+
+		# Start emulator in background
+		"$EMULATOR" -avd "$AVD_NAME" -no-snapshot-load > /tmp/rootavd_emulator.log 2>&1 &
+		local EMU_PID=$!
+
+		echo "[*] Emulator PID: $EMU_PID"
+		echo "[*] Waiting for emulator to boot..."
+
+		# Wait for device to be available
+		local BOOT_TIMEOUT=120
+		local BOOT_WAIT=0
+
+		while [ $BOOT_WAIT -lt $BOOT_TIMEOUT ]; do
+			# Check if emulator process is still running
+			if ! kill -0 $EMU_PID 2>/dev/null; then
+				echo "[!] Emulator process died unexpectedly"
+				echo "[!] Check /tmp/rootavd_emulator.log for details"
+				return 1
+			fi
+
+			# Check if device is online
+			local DEV_STATE=$(adb get-state 2>/dev/null || echo "offline")
+			if [ "$DEV_STATE" = "device" ]; then
+				# Check if boot completed
+				local BOOT_COMPLETED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n')
+				if [ "$BOOT_COMPLETED" = "1" ]; then
+					echo ""
+					echo "[+] Emulator booted successfully!"
+					break
+				fi
+			fi
+
+			printf "\r[*] Waiting for boot... %ds / %ds" $BOOT_WAIT $BOOT_TIMEOUT
+			sleep 2
+			BOOT_WAIT=$((BOOT_WAIT + 2))
+		done
+
+		echo ""
+
+		if [ $BOOT_WAIT -ge $BOOT_TIMEOUT ]; then
+			echo "[!] Emulator boot timeout"
+			echo "[!] The emulator may still be booting. Check Android Studio or try again."
+			return 1
+		fi
+	fi
+
+	# Wait a bit more for system to stabilize
+	echo "[*] Waiting for system to stabilize..."
+	sleep 5
+
+	# Now run the rooting process
+	echo ""
+	echo "[*] Starting rooting process..."
+	echo ""
+
+	# Build the ramdisk path
+	local RAMDISK_PATH="${SYSIMG_PATH}/ramdisk.img"
+
+	# Check if ramdisk exists
+	if [ ! -f "$ANDROIDHOME/$RAMDISK_PATH" ]; then
+		echo "[!] Ramdisk not found at: $ANDROIDHOME/$RAMDISK_PATH"
+		# Try to find it
+		local FOUND_RAMDISK=$(find "$ANDROIDHOME/$SYSIMG_PATH" -name "ramdisk*.img" 2>/dev/null | head -1)
+		if [ -n "$FOUND_RAMDISK" ]; then
+			RAMDISK_PATH="${FOUND_RAMDISK#$ANDROIDHOME/}"
+			echo "[*] Found ramdisk at: $RAMDISK_PATH"
+		else
+			echo "[!] Could not find ramdisk image"
+			return 1
+		fi
+	fi
+
+	echo "[*] Ramdisk path: $RAMDISK_PATH"
+	echo ""
+
+	# Determine patching method based on API level
+	local PATCH_METHOD=""
+	if [ "$API_LEVEL" -ge 26 ]; then
+		PATCH_METHOD="FAKEBOOTIMG"
+		echo "[*] Using FAKEBOOTIMG method (recommended for Magisk >= 26.x)"
+	fi
+
+	echo ""
+	echo "${bold}Executing:${normal} ./rootAVD.sh $RAMDISK_PATH $PATCH_METHOD"
+	echo ""
+
+	printf "Proceed with rooting? [Y/n]: "
+	read -r confirm_root
+
+	case "$confirm_root" in
+		n|N)
+			echo "[-] Rooting cancelled"
+			echo "[*] AVD is running. You can root it later with:"
+			echo "    ./rootAVD.sh $RAMDISK_PATH $PATCH_METHOD"
+			return 0
+			;;
+	esac
+
+	# Export for main script
+	export SELECTED_AVD="$RAMDISK_PATH"
+	export EXTRA_ARGS="$PATCH_METHOD"
+	export CREATE_MODE_RAMDISK="$RAMDISK_PATH"
+	export CREATE_MODE_ARGS="$PATCH_METHOD"
+
+	return 0
+}
+
 ShowHelpText() {
 bold=$(tput bold)
 normal=$(tput sgr0)
@@ -2917,6 +3329,14 @@ echo ""
 echo "	${bold}InstallApps${normal}			Just install all APKs placed in the Apps folder"
 echo ""
 echo "	${bold}--interactive${normal}			Interactive AVD selector menu"
+echo ""
+echo "	${bold}--create API [VARIANT] [ARCH]${normal}	Create and root a new AVD"
+echo "					- Downloads system image if not installed"
+echo "					- Creates AVD and starts emulator"
+echo "					- Roots the AVD automatically"
+echo "					- VARIANT: playstore (default) or google_apis"
+echo "					- ARCH: arm64-v8a (default on Apple Silicon) or x86_64"
+echo "					- Example: ${bold}./rootAVD.sh --create 35 playstore${normal}"
 echo ""
 echo "Main operation mode:"
 echo "	${bold}DIR${normal}				a path to an AVD system-image"
@@ -2999,6 +3419,7 @@ ProcessArguments() {
 	toggleRamdisk=false
 	FAKEBOOTIMG=false
 	Interactive=false
+	CreateMode=false
 
 	# Call rootAVD with SOURCING if you just want to source it
 	# or export SOURCING=true if you are in crosh
@@ -3052,6 +3473,14 @@ ProcessArguments() {
 		Interactive=true
 	fi
 
+	# Call rootAVD with --create to create and root a new AVD
+	if [[ "$1" == "--create" ]] || [[ "$1" == "-c" ]]; then
+		CreateMode=true
+		CREATE_API="$2"
+		CREATE_VARIANT="$3"
+		CREATE_ARCH="$4"
+	fi
+
 	RAMDISKIMG=true
 
 	case $2 in
@@ -3100,6 +3529,10 @@ ProcessArguments() {
 	export SOURCING
 	export FAKEBOOTIMG
 	export Interactive
+	export CreateMode
+	export CREATE_API
+	export CREATE_VARIANT
+	export CREATE_ARCH
 }
 
 # Script Entry Point
@@ -3179,6 +3612,22 @@ if ( "$Interactive" ); then
 		set -- "$SELECTED_AVD" $EXTRA_ARGS
 		ProcessArguments $@
 		CopyMagiskToAVD $@
+		exit
+	else
+		exit 1
+	fi
+fi
+
+# Handle create mode - create AVD from scratch, download if needed, and root
+if ( "$CreateMode" ); then
+	if CreateAndRootAVD "$CREATE_API" "$CREATE_VARIANT" "$CREATE_ARCH"; then
+		if [ -n "$CREATE_MODE_RAMDISK" ]; then
+			# Re-run the script with the created AVD
+			echo "[!] and we are NOT in an emulator shell"
+			set -- "$CREATE_MODE_RAMDISK" $CREATE_MODE_ARGS
+			ProcessArguments $@
+			CopyMagiskToAVD $@
+		fi
 		exit
 	else
 		exit 1
