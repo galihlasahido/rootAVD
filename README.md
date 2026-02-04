@@ -44,6 +44,10 @@ Arguments:
 
         InstallApps                     Just install all APKs placed in the Apps folder
 
+        --interactive                   Interactive AVD selector menu
+                                        - shows all available AVDs in a numbered list
+                                        - allows selecting patching method and options
+
 Main operation mode:
         DIR                             a path to an AVD system-image
                                         - must always be the 1st Argument after rootAVD
@@ -110,6 +114,7 @@ Command Examples:
 ./rootAVD.sh
 ./rootAVD.sh ListAllAVDs
 ./rootAVD.sh InstallApps
+./rootAVD.sh --interactive
 
 ./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img
 ./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img FAKEBOOTIMG
@@ -242,6 +247,8 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 * Magisk Versions >= 26.x can only be proper installed with the FAKEBOOTIMG argument
 	* due to the [New sepolicy.rule Implementation](https://github.com/topjohnwu/Magisk/releases/tag/v26.1)
 * Android 14 needs Magisk Version >= 26.x to be rooted
+* Android 15/16 needs Magisk Version >= 27.x to be rooted (v30.x recommended)
+	* The bundled Magisk v26.4 works for Android versions up to 14
 
 ### Notes on Magisk Versions
 * Replace the Magisk.zip with the Flavour/Version of your choice
@@ -383,6 +390,14 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 </details>
 
 ### Change Logs
+#### [Feb 2025]
+* [rootAVD.sh] - Added Interactive AVD Selector (`--interactive` or `-i` argument)
+	* Shows all available AVDs in a numbered list
+	* Allows selecting patching method and options interactively
+* [rootAVD.sh] - Added Android 15 (API 35) and Android 16 (API 36 / Baklava) support
+* [rootAVD.sh] - Fixed POSIX shell compatibility for AVD selector function
+* [rootAVD.bat] - Updated API version list to include Android 15/16
+
 #### [Oct 2024]
 * [rootAVD.sh] - Added Support for LD_PRELOAD of init
 * [General] - Updated to Magisk v26.4
