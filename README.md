@@ -65,7 +65,7 @@ ADB Path | Ramdisk DIR| ANDROID_HOME:
                                         can be overwritten by setting the ANDROID_HOME variable.
                                         e.g. set ANDROID_HOME=%USERPROFILE%\Downloads\sdk
 
-        $API:                           25,29,30,31,32,33,34,UpsideDownCake,etc.
+        $API:                           25,29,30,31,32,33,34,35,36,VanillaIceCream,Baklava,etc.
 
 Options:
         restore                         restore all existing .backup files, but doesn't delete them

@@ -549,7 +549,7 @@ exit /B 0
 	echo 					can be overwritten by setting the ANDROID_HOME variable.
 	echo 					e.g. set ANDROID_HOME=%%USERPROFILE%%\Downloads\sdk
 	echo.
-	echo 	^$API:				25,29,30,31,32,33,34,UpsideDownCake,etc.
+	echo 	^$API:				25,29,30,31,32,33,34,35,36,VanillaIceCream,Baklava,etc.
 	echo.
 	echo Options:
 	echo 	restore				restore all existing .backup files, but doesn't delete them

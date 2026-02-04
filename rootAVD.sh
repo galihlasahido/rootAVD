@@ -2721,6 +2721,175 @@ FindSystemImages() {
 	done
 }
 
+SelectAVDInteractive() {
+	# This function only works on the host, not in the emulator
+	# Skip if we're in an emulator environment
+	if [ "$INEMULATOR" = "true" ]; then
+		return 1
+	fi
+
+	bold=$(tput bold 2>/dev/null) || bold=""
+	normal=$(tput sgr0 2>/dev/null) || normal=""
+
+	echo ""
+	echo "${bold}rootAVD Interactive AVD Selector${normal}"
+	echo "================================="
+	echo ""
+
+	if $NoSystemImages ; then
+		echo "[!] No system-images could be found"
+		echo "[-] Please check your ANDROID_HOME setting"
+		return 1
+	fi
+
+	# Collect all ramdisk images into a temp file (POSIX compatible)
+	AVD_LIST_FILE=$(mktemp)
+	count=0
+
+	cd "$ANDROIDHOME" > /dev/null
+	find $SYSIM_DIR -type f -iname "ramdisk*.img" 2>/dev/null | sort > "$AVD_LIST_FILE"
+	count=$(wc -l < "$AVD_LIST_FILE" | tr -d ' ')
+	cd - > /dev/null
+
+	if [ "$count" -eq 0 ]; then
+		echo "[!] No AVD ramdisk images found in $ANDROIDHOME/$SYSIM_DIR"
+		rm -f "$AVD_LIST_FILE"
+		return 1
+	fi
+
+	echo "Found ${bold}$count${normal} AVD(s) in $ENVVAR"
+	echo ""
+	echo "Select an AVD to root:"
+	echo ""
+
+	# Display numbered list with parsed info
+	i=1
+	while IFS= read -r avd; do
+		# Parse AVD info from path
+		api_version=$(echo "$avd" | sed -n 's|.*android-\([^/]*\)/.*|\1|p')
+		variant=$(echo "$avd" | awk -F'/' '{print $(NF-2)}')
+		arch=$(echo "$avd" | awk -F'/' '{print $(NF-1)}')
+		ramdisk_name=$(basename "$avd")
+
+		# Color coding based on variant
+		variant_display="$variant"
+		case "$variant" in
+			*playstore*) variant_display="${bold}$variant${normal}" ;;
+		esac
+
+		printf "  ${bold}%2d)${normal} API %-15s | %-30s | %-10s | %s\n" \
+			"$i" "$api_version" "$variant_display" "$arch" "$ramdisk_name"
+		i=$((i + 1))
+	done < "$AVD_LIST_FILE"
+
+	echo ""
+	echo "  ${bold} 0)${normal} Cancel"
+	echo ""
+
+	# Get user selection
+	while true; do
+		printf "Enter selection [1-$count]: "
+		read -r selection
+
+		# Handle cancel
+		case "$selection" in
+			0|q|Q)
+				echo "[-] Cancelled"
+				rm -f "$AVD_LIST_FILE"
+				return 1
+				;;
+		esac
+
+		# Validate input is a number
+		case "$selection" in
+			''|*[!0-9]*)
+				echo "[!] Please enter a number between 1 and $count"
+				continue
+				;;
+		esac
+
+		# Validate range
+		if [ "$selection" -lt 1 ] || [ "$selection" -gt "$count" ]; then
+			echo "[!] Please enter a number between 1 and $count"
+			continue
+		fi
+
+		break
+	done
+
+	# Get selected AVD from file
+	SELECTED_AVD=$(sed -n "${selection}p" "$AVD_LIST_FILE")
+	rm -f "$AVD_LIST_FILE"
+
+	echo ""
+	echo "[*] Selected: ${bold}$SELECTED_AVD${normal}"
+	echo ""
+
+	# Ask for extra options
+	echo "Select patching method:"
+	echo "  ${bold}1)${normal} Standard patching (Recommended for Magisk < 26.x)"
+	echo "  ${bold}2)${normal} FAKEBOOTIMG patching (Recommended for Magisk >= 26.x)"
+	echo "  ${bold}3)${normal} Restore from backup"
+	echo ""
+
+	printf "Enter method [1-3] (default: 2): "
+	read -r method
+
+	case $method in
+		1)
+			EXTRA_ARGS=""
+			;;
+		3)
+			EXTRA_ARGS="restore"
+			;;
+		*)
+			# Default to FAKEBOOTIMG for modern Magisk
+			EXTRA_ARGS="FAKEBOOTIMG"
+			;;
+	esac
+
+	# Ask for additional options if not restoring
+	if [ "$EXTRA_ARGS" != "restore" ]; then
+		echo ""
+		echo "Additional options (enter numbers separated by space, or press Enter to skip):"
+		echo "  ${bold}1)${normal} PATCHFSTAB    - Patch fstab.ranchu for block device automount"
+		echo "  ${bold}2)${normal} GetUSBHPmodZ  - Download USB HOST Permissions Module"
+		echo "  ${bold}3)${normal} DEBUG         - Debug mode (don't pull back patched files)"
+		echo ""
+
+		printf "Enter options (e.g., '1 2' or press Enter): "
+		read -r extra_opts
+
+		for opt in $extra_opts; do
+			case $opt in
+				1) EXTRA_ARGS="$EXTRA_ARGS PATCHFSTAB" ;;
+				2) EXTRA_ARGS="$EXTRA_ARGS GetUSBHPmodZ" ;;
+				3) EXTRA_ARGS="$EXTRA_ARGS DEBUG" ;;
+			esac
+		done
+	fi
+
+	echo ""
+	echo "${bold}Executing:${normal} ./rootAVD.sh $SELECTED_AVD $EXTRA_ARGS"
+	echo ""
+
+	# Confirm before proceeding
+	printf "Proceed? [Y/n]: "
+	read -r confirm
+
+	case "$confirm" in
+		n|N)
+			echo "[-] Cancelled"
+			return 1
+			;;
+	esac
+
+	# Export selected values for the main script
+	export SELECTED_AVD
+	export EXTRA_ARGS
+	return 0
+}
+
 ShowHelpText() {
 bold=$(tput bold)
 normal=$(tput sgr0)
@@ -2733,6 +2902,8 @@ echo "Arguments:"
 echo "	${bold}ListAllAVDs${normal}			Lists Command Examples for ALL installed AVDs"
 echo ""
 echo "	${bold}InstallApps${normal}			Just install all APKs placed in the Apps folder"
+echo ""
+echo "	${bold}--interactive${normal}			Interactive AVD selector menu"
 echo ""
 echo "Main operation mode:"
 echo "	${bold}DIR${normal}				a path to an AVD system-image"
@@ -2756,7 +2927,7 @@ echo "					directory, search for AVD system-images and ADB binarys. This behavio
 echo "					can be overwritten by setting the ANDROID_HOME variable."
 echo "					e.g. ${bold}export ANDROID_HOME=~/Downloads/sdk${normal}"
 echo "	"
-echo "	${bold}\$API:${normal}				25,29,30,31,32,33,34,UpsideDownCake,etc."
+echo "	${bold}\$API:${normal}				25,29,30,31,32,33,34,35,36,VanillaIceCream,Baklava,etc."
 echo "	"
 echo "Options:"
 echo "	${bold}restore${normal}				restore all existing ${bold}.backup${normal} files, but doesn't delete them"
@@ -2814,6 +2985,7 @@ ProcessArguments() {
 	BLUESTACKS=false
 	toggleRamdisk=false
 	FAKEBOOTIMG=false
+	Interactive=false
 
 	# Call rootAVD with SOURCING if you just want to source it
 	# or export SOURCING=true if you are in crosh
@@ -2861,6 +3033,11 @@ ProcessArguments() {
 		AddRCscripts=true
 	fi
 
+	# Call rootAVD with --interactive for interactive AVD selection menu
+	# Note: Use word boundary check to avoid matching -i in paths like arm64-v8a
+	if [[ "$1" == "--interactive" ]] || [[ "$1" == "-i" ]]; then
+		Interactive=true
+	fi
 
 	RAMDISKIMG=true
 
@@ -2909,6 +3086,7 @@ ProcessArguments() {
 	export toggleRamdisk
 	export SOURCING
 	export FAKEBOOTIMG
+	export Interactive
 }
 
 # Script Entry Point
@@ -2976,6 +3154,22 @@ if ( "$DEBUG" ); then
 	echo "toggleRamdisk: $toggleRamdisk"
 	echo "SOURCING: $SOURCING"
 	echo "FAKEBOOTIMG: $FAKEBOOTIMG"
+	echo "Interactive: $Interactive"
+fi
+
+# Handle interactive mode
+if ( "$Interactive" ); then
+	if SelectAVDInteractive; then
+		# Re-run the script with the selected AVD and extra arguments
+		echo "[!] and we are NOT in an emulator shell"
+		# Re-process arguments with the selected AVD
+		set -- "$SELECTED_AVD" $EXTRA_ARGS
+		ProcessArguments $@
+		CopyMagiskToAVD $@
+		exit
+	else
+		exit 1
+	fi
 fi
 
 if ( ! "$InstallApps" && ! "$BLUESTACKS"); then

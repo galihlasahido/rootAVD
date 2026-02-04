@@ -5,3 +5,4 @@ bzImage
 *.rc
 libbusybox*
 sbin*
+CLAUDE.md
