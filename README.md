@@ -401,22 +401,31 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 
 ### Change Logs
 #### [Feb 2025]
-* [rootAVD.sh] - Added Interactive AVD Selector (`--interactive` or `-i` argument)
+* [rootAVD.sh] - **NEW: Interactive AVD Selector** (`--interactive` or `-i`)
 	* Shows all available AVDs in a numbered list
-	* Allows selecting patching method and options interactively
-* [rootAVD.sh] - Added Create and Root AVD feature (`--create` argument)
-	* Downloads system image if not installed
-	* Creates AVD automatically (with fallback for SDK tools issues)
-	* Starts emulator and waits for boot
+	* Allows selecting patching method (Standard, FAKEBOOTIMG, Restore)
+	* Allows selecting extra options (PATCHFSTAB, GetUSBHPmodZ, DEBUG)
+	* Displays command preview before execution
+* [rootAVD.sh] - **NEW: Create and Root AVD** (`--create API [VARIANT] [ARCH]`)
+	* Downloads system image via sdkmanager if not installed
+	* Creates AVD automatically with fallback for SDK tools version issues
+	* Auto-detects host architecture (arm64-v8a for Apple Silicon, x86_64 for Intel)
+	* Starts emulator and waits for boot completion
 	* Roots the AVD with appropriate Magisk version
 	* Example: `./rootAVD.sh --create 35 playstore arm64-v8a`
-* [rootAVD.sh] - Added Android 15 (API 35) and Android 16 (API 36 / Baklava) support
-* [rootAVD.sh] - Added automatic Magisk version selection based on Android API level
-	* Uses Magisk30.zip for Android 15+ (API 35+)
-	* Uses Magisk.zip (v26.4) for Android 14 and below
-* [General] - Added Magisk30.zip (v30.6) for Android 15/16 compatibility
-* [rootAVD.sh] - Fixed POSIX shell compatibility for AVD selector function
+* [rootAVD.sh] - **NEW: Automatic Magisk version selection**
+	* Auto-detects Android API level from ramdisk path
+	* Uses `Magisk30.zip` (v30.6) for Android 15+ (API 35+)
+	* Uses `Magisk.zip` (v26.4) for Android 14 and below (API < 35)
+* [General] - Added Android 15 (API 35) and Android 16 (API 36 / Baklava) support
+* [General] - Added `Magisk30.zip` (v30.6) for Android 15/16 compatibility
+* [rootAVD.sh] - Fixed POSIX shell compatibility for interactive selector (works on Android shell)
 * [rootAVD.bat] - Updated API version list to include Android 15/16
+* [README.md] - Comprehensive documentation update
+	* Added Quick Start section with 3 options
+	* Added Android version compatibility table
+	* Updated command examples for API 34/35/36
+	* Removed outdated content (GitLab links, old guides)
 
 #### [Oct 2024]
 * [rootAVD.sh] - Added Support for LD_PRELOAD of init
