@@ -1,8 +1,14 @@
-# This Repo has moved to GitLab since 24th of Oct 2023
-# [rootAVD](https://gitlab.com/newbit/rootAVD)
-### [newbit @ xda-developers](https://forum.xda-developers.com/m/newbit.1350876)
+# rootAVD
+### A Script to root Android Studio AVDs with Magisk
+#### [newbit @ xda-developers](https://forum.xda-developers.com/m/newbit.1350876)
+
+**Supported Android Versions:** Android 7 - Android 16 (API 24-36)
+
 A Script to...
 * root your Android Studio Virtual Device (AVD), with Magisk (Stable, Canary or Alpha)
+* **automatically create and root AVDs** with a single command (`--create`)
+* **interactively select AVDs** from a menu (`--interactive`)
+* **auto-select Magisk version** based on Android version (v26.4 for Android ≤14, v30 for Android 15+)
 * patch its fstab
 * download and install the USB HOST Permissions Module for Magisk
 * install custom build Kernel and its Modules
@@ -10,16 +16,41 @@ A Script to...
 
 ...within seconds.
 
+## Quick Start
+
+### Option 1: Create and Root AVD Automatically (Recommended)
+```bash
+# Download and root Android 15 with Play Store in one command
+./rootAVD.sh --create 35 playstore
+
+# Or Android 14 with Google APIs
+./rootAVD.sh --create 34 google_apis
+```
+
+### Option 2: Interactive Mode
+```bash
+# Select AVD from a menu
+./rootAVD.sh --interactive
+```
+
+### Option 3: Traditional Method
+```bash
+# Root an existing running AVD
+./rootAVD.sh system-images/android-35/google_apis_playstore/arm64-v8a/ramdisk.img FAKEBOOTIMG
+```
+
 ## Install Magisk
 ### Download rootAVD via
-* [Click](https://gitlab.com/newbit/rootAVD/-/archive/master/rootAVD-master.zip)
-* `git clone https://gitlab.com/newbit/rootAVD.git`
+* `git clone https://github.com/galihlasahido/rootAVD.git`
+* Or download ZIP from releases
 
 ### Preconditions
-* the AVD is running
-* a working Internet connection for the Menu
-* a command prompt / terminal is opened
-* `adb shell` will connect to the running AVD
+* For `--create`: No preconditions, script handles everything
+* For other methods:
+  * the AVD is running
+  * a working Internet connection for the Menu
+  * a command prompt / terminal is opened
+  * `adb shell` will connect to the running AVD
 
 ### Use Case Examples
 * [on MacOS](https://gitlab.com/newbit/video-files/-/blob/master/rootAVD_MacOS.gif)
@@ -119,21 +150,31 @@ Notes: rootAVD will
 ### Linux & MacOS
 ```
 Command Examples:
+
+# New: Create and Root AVD automatically (downloads system image if needed)
+./rootAVD.sh --create 35 playstore              # Android 15 with Play Store
+./rootAVD.sh --create 36 playstore arm64-v8a    # Android 16 with Play Store
+./rootAVD.sh --create 34 google_apis x86_64     # Android 14 with Google APIs
+
+# New: Interactive AVD selector
+./rootAVD.sh --interactive
+./rootAVD.sh -i
+
+# Traditional commands
 ./rootAVD.sh
 ./rootAVD.sh ListAllAVDs
 ./rootAVD.sh InstallApps
-./rootAVD.sh --interactive
-./rootAVD.sh --create 35 playstore arm64-v8a
-./rootAVD.sh --create 34 google_apis x86_64
 
-./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img
-./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img FAKEBOOTIMG
-./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img DEBUG PATCHFSTAB GetUSBHPmodZ
-./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img restore
-./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img InstallKernelModules
-./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img InstallPrebuiltKernelModules
-./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img InstallPrebuiltKernelModules GetUSBHPmodZ PATCHFSTAB DEBUG
-./rootAVD.sh system-images/android-33/google_apis_playstore/x86_64/ramdisk.img AddRCscripts
+# Root Android 15/16 (uses Magisk v30 automatically)
+./rootAVD.sh system-images/android-35/google_apis_playstore/arm64-v8a/ramdisk.img FAKEBOOTIMG
+
+# Root Android 14 and below (uses Magisk v26.4)
+./rootAVD.sh system-images/android-34/google_apis_playstore/arm64-v8a/ramdisk.img FAKEBOOTIMG
+./rootAVD.sh system-images/android-34/google_apis_playstore/arm64-v8a/ramdisk.img DEBUG PATCHFSTAB GetUSBHPmodZ
+./rootAVD.sh system-images/android-34/google_apis_playstore/arm64-v8a/ramdisk.img restore
+./rootAVD.sh system-images/android-34/google_apis_playstore/arm64-v8a/ramdisk.img InstallKernelModules
+./rootAVD.sh system-images/android-34/google_apis_playstore/arm64-v8a/ramdisk.img InstallPrebuiltKernelModules
+./rootAVD.sh system-images/android-34/google_apis_playstore/arm64-v8a/ramdisk.img AddRCscripts
 ```
 
 <details>
@@ -247,25 +288,36 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 </details>
 
 ### Notes
+
+#### Android Version Compatibility
+| Android Version | API Level | Magisk Version | Auto-Selected |
+|-----------------|-----------|----------------|---------------|
+| Android 7-13    | 24-33     | v26.4          | ✅ Magisk.zip |
+| Android 14      | 34        | v26.4+         | ✅ Magisk.zip |
+| Android 15      | 35        | v27+/v30       | ✅ Magisk30.zip |
+| Android 16      | 36        | v30+           | ✅ Magisk30.zip |
+| Android 9 (Pie) | 28        | **Not Supported** | ❌ |
+
+#### General Notes
+* **Automatic Magisk Selection**: Script auto-detects Android version and uses appropriate Magisk
 * 64 Bit Only Systems needs Magisk 23.x
-* In the Menu, you can choose between the newest Magisk, Canary and Stable, Version.
+* In the Menu, you can choose between the newest Magisk, Canary and Stable, Version
 * With the new Option `s`, you can see and download any other Versions of Magisk
-* Once choosen, the script will make that Version to your local one.
+* Once chosen, the script will make that Version to its local
 * Prebuilt Kernel and Modules will be pulled from [AOSP](https://android.googlesource.com/kernel/prebuilts)
 * Starting Magisk from Terminal via `adb shell monkey -p com.topjohnwu.magisk -c android.intent.category.LAUNCHER 1`
 * API 28 (Pie) is **not supported** at all -> [because](https://source.android.com/devices/bootloader/partitions/system-as-root#sar-partitioning)
-* Magisk Versions >= 26.x can only be proper installed with the FAKEBOOTIMG argument
+* Magisk Versions >= 26.x can only be properly installed with the FAKEBOOTIMG argument
 	* due to the [New sepolicy.rule Implementation](https://github.com/topjohnwu/Magisk/releases/tag/v26.1)
-* Android 14 needs Magisk Version >= 26.x to be rooted
-* Android 15/16 needs Magisk Version >= 27.x to be rooted (v30.x recommended)
-	* The bundled Magisk v26.4 works for Android versions up to 14
 
 ### Notes on Magisk Versions
 * **Automatic version selection**: The script automatically detects Android API level and selects the appropriate Magisk version:
 	* API < 35 (Android 14 and below): Uses `Magisk.zip` (v26.4)
-	* API >= 35 (Android 15+): Uses `Magisk30.zip` (v30.x) if available
-* Replace the Magisk.zip with the Flavour/Version of your choice
-* Tested Flavours are:
+	* API >= 35 (Android 15+): Uses `Magisk30.zip` (v30.6) if available
+* Bundled Magisk versions:
+	* `Magisk.zip` - v26.4 (for Android 7-14)
+	* `Magisk30.zip` - v30.6 (for Android 15-16)
+* Replace with the Flavour/Version of your choice:
 	* Magisk from [topjohnwu](https://github.com/topjohnwu/magisk-files)
 	* Magisk Alpha from [vvb2060](https://xdaforums.com/t/discussion-magisk-alpha-public-released-fork-vvb2060.4424845/)
 	* Kitsune Magisk / Delta from [huskydg](https://github.com/HuskyDG/magisk-files/releases)
