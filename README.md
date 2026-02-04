@@ -48,6 +48,14 @@ Arguments:
                                         - shows all available AVDs in a numbered list
                                         - allows selecting patching method and options
 
+        --create API [VARIANT] [ARCH]   Create and root a new AVD
+                                        - Downloads system image if not installed
+                                        - Creates AVD and starts emulator
+                                        - Roots the AVD automatically
+                                        - VARIANT: playstore (default) or google_apis
+                                        - ARCH: arm64-v8a (default on Apple Silicon) or x86_64
+                                        - Example: ./rootAVD.sh --create 35 playstore
+
 Main operation mode:
         DIR                             a path to an AVD system-image
                                         - must always be the 1st Argument after rootAVD
