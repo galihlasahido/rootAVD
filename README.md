@@ -52,13 +52,6 @@ A Script to...
   * a command prompt / terminal is opened
   * `adb shell` will connect to the running AVD
 
-### Use Case Examples
-* [on MacOS](https://gitlab.com/newbit/video-files/-/blob/master/rootAVD_MacOS.gif)
-* [BlueStacks 4 on MacOS](https://gitlab.com/newbit/video-files/-/blob/master/rootAVD_MacOS_BlueStacks.gif)
-* [on Windows](https://gitlab.com/newbit/video-files/-/blob/master/rootAVD_Windows.gif)
-* [on Linux](https://gitlab.com/newbit/video-files/-/blob/master/rootAVD_Linux.gif)
-* [Fake Boot.img on MacOS](https://gitlab.com/newbit/video-files/-/blob/master/rootAVD_MacOS_FAKEBOOTIMG.gif)
-
 ### How to Install ADB (Android SDK Platform-Tools)
 * Open Android Studio -> SDK Manager -> Android SDK -> SDK Tools -> Check on **Android SDK Platform-Tools** -> Apply
 <img src="https://user-images.githubusercontent.com/37043777/140064719-ea2dd704-1aea-4c38-9725-3edbdafe7924.png" width="200" height="200" />
@@ -327,11 +320,6 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 * In both cases, the script will search in it for AVD system-images and adb binarys
 * `ANDROID_HOME` Sets the path to the SDK installation directory -> [AOSP Variables reference](https://developer.android.com/tools/variables#envar)
 
-### Notes for Microsoft Visual Studio AVDs
-* `ANDROID_HOME` needs to be set properly i.e. `set ANDROID_HOME="C:\Program Files (x86)\Android\android-sdk"`
-* `"C:\Program Files (x86)\Android\android-sdk"` needs elevated write permissions
-* the script will ask for user permissions, every time it needs to write to those locations
-
 ### Notes for Apk Developers
 * [How-To SU](http://su.chainfire.eu) from [Chainfire's](https://github.com/Chainfire) [libsuperuser](https://github.com/Chainfire/libsuperuser) - Guidelines for problem-free su usage (for Android Developers)
 * [TopJohnWu's libsu](https://github.com/topjohnwu/libsu) - An Android library providing a complete solution for apps using root permissions
@@ -370,49 +358,6 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 * Every time you want to Grant Su Permissions, switch to user 0 and then back to 10 `adb shell am switch-user 10`
 * Alternative, you can install the Module [Magisk Single User Mod](https://gitlab.com/newbit/msum)
 	* and remove all user higher than 0 i.e. `adb shell pm remove-user 13` or `adb shell pm remove-user 10`
-
-### BlueStacks 4 Notes on MacOs
-* Modules are working
-* Zygisk doesn't work
-* The Home Screen Apk closes as soon as Magisk APP is installed
-	* but you can start Magisk from Terminal via `adb shell monkey -p com.topjohnwu.magisk -c android.intent.category.LAUNCHER 1`
-	* and Hide the Magisk APP to Settings i.e.
-* ADB Connection is very buggy, `adb kill-server` is necessary quite often
-
-### Links
-* [XDA [GUIDE] Build / Mod AVD Kernel Android 10 / 11 rootAVD [Magisk] [USB passthrough Linux] [Google Play Store API]](https://forum.xda-developers.com/t/guide-build-mod-avd-kernel-android10-x86_64-29-root-magisk-usb-passthrough-linux.4212719)
-* [Inject Android Hardware USB HOST Permissions](https://gitlab.com/newbit/usbhostpermissons)
-* [XDA [SCRIPT] rootAVD - root your Android Studio Virtual Device emulator with Magisk [Android 12][Linux][Darwin/MacOS][WIN][Google Play Store APIs]](https://forum.xda-developers.com/t/script-rootavd-root-your-android-studio-virtual-device-emulator-with-magisk-android-11-linux-darwin-macos-win-google-play-store-apis.4218123)
-* [rootCROS - A Script to root your Google Chrome OS installed on a non Chromebook Device](https://gitlab.com/newbit/rootCROS)
-
-### XDA [GUIDE] How to [Build|Mod|Update] a custom AVD Kernel and its Modules
-* [[GUIDE][Build|Mod|Update][kernel-ranchu][goldfish][5.4][5.10][GKI][ramdisk.img][modules][rootAVD][Android 11(R) 12(S)][AVD][Google Play Store API]](https://forum.xda-developers.com/t/guide-build-mod-update-kernel-ranchu-goldfish-5-4-5-10-gki-ramdisk-img-modules-rootavd-android-11-r-12-s-avd-google-play-store-api.4220697)
-
-### How to root AVDs without Play Store (Google APIs) out of the box
-### Windows
-* open a terminal -> win + r `cmd`
-	* add emulator to your PATH
-	* find your AVD
-	* launch your AVD with the `-writable-system` argument
-	```
-	set PATH=%LOCALAPPDATA%\Android\Sdk\emulator;%PATH%
-	emulator -list-avds
-		Pixel_4_API_29
-	emulator -avd Pixel_4_API_29 -writable-system
-	```
-* open a 2nd terminal -> win + r `cmd`
-	* enter the following commands one by one
-	```
-	set PATH=%LOCALAPPDATA%\Android\Sdk\platform-tools;%PATH%
-	adb root
-	adb shell avbctl disable-verification
-	adb disable-verity
-	adb reboot
-	adb root
-	adb remount
-	adb shell
-	generic_x86_64:/ #
-	```
 
 ### [Compatibility Chart](CompatibilityChart.md)
 <details>
