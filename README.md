@@ -400,7 +400,7 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 </details>
 
 ### Change Logs
-#### [Feb 2025]
+#### [Feb 2026]
 * [rootAVD.sh] - **NEW: Interactive AVD Selector** (`--interactive` or `-i`)
 	* Shows all available AVDs in a numbered list
 	* Allows selecting patching method (Standard, FAKEBOOTIMG, Restore)
