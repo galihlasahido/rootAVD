@@ -251,6 +251,9 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 	* The bundled Magisk v26.4 works for Android versions up to 14
 
 ### Notes on Magisk Versions
+* **Automatic version selection**: The script automatically detects Android API level and selects the appropriate Magisk version:
+	* API < 35 (Android 14 and below): Uses `Magisk.zip` (v26.4)
+	* API >= 35 (Android 15+): Uses `Magisk30.zip` (v30.x) if available
 * Replace the Magisk.zip with the Flavour/Version of your choice
 * Tested Flavours are:
 	* Magisk from [topjohnwu](https://github.com/topjohnwu/magisk-files)
@@ -395,6 +398,10 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 	* Shows all available AVDs in a numbered list
 	* Allows selecting patching method and options interactively
 * [rootAVD.sh] - Added Android 15 (API 35) and Android 16 (API 36 / Baklava) support
+* [rootAVD.sh] - Added automatic Magisk version selection based on Android API level
+	* Uses Magisk30.zip for Android 15+ (API 35+)
+	* Uses Magisk.zip (v26.4) for Android 14 and below
+* [General] - Added Magisk30.zip (v30.6) for Android 15/16 compatibility
 * [rootAVD.sh] - Fixed POSIX shell compatibility for AVD selector function
 * [rootAVD.bat] - Updated API version list to include Android 15/16
 

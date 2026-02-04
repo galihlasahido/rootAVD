@@ -733,6 +733,19 @@ CopyMagiskToAVD() {
 	ROOTAVD="`getdir "${BASH_SOURCE:-$0}"`"
 	MAGISKZIP=$ROOTAVD/Magisk.zip
 
+	# Auto-select Magisk version based on Android API level
+	# Android 15+ (API 35+) requires Magisk v27+ (v30 recommended)
+	HOST_API=$(echo "$1" | sed -n 's|.*android-\([0-9]*\)/.*|\1|p')
+	if [ -n "$HOST_API" ] && [ "$HOST_API" -ge 35 ] 2>/dev/null; then
+		if [ -f "$ROOTAVD/Magisk30.zip" ]; then
+			MAGISKZIP=$ROOTAVD/Magisk30.zip
+			echo "[*] Android API $HOST_API detected - using Magisk v30 for compatibility"
+		else
+			echo "[!] Android API $HOST_API detected but Magisk30.zip not found"
+			echo "[!] For Android 15+, Magisk v27+ is required. Using default Magisk.zip"
+		fi
+	fi
+
 	# change to ROOTAVD directory
 	cd "$ROOTAVD"
 
