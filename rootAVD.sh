@@ -443,33 +443,56 @@ checkfile() {
 # every APK file in the Apps DIR will be (re)installed
 # Like magisk.apk etc.
 install_apps() {
+	local APPDIR="$ROOTAVD/Apps"
 	local ADBECHO=""
-  	APPS="Apps/*"
-	echo "[-] Install all APKs placed in the Apps folder"
-	FILES=$APPS
+	local FILES=()
 
-	for f in $FILES; do
+	echo "[-] Install all APKs placed in the Apps folder"
+
+	if [ ! -d "$APPDIR" ]; then
+		echo "[-] Apps folder does not exist - skipping APK installation"
+		return 0
+	fi
+
+	shopt -s nullglob
+	FILES=("$APPDIR"/*.apk)
+	shopt -u nullglob
+
+	if [ "${#FILES[@]}" -eq 0 ]; then
+		echo "[-] No APK files found in Apps folder - skipping"
+		return 0
+	fi
+
+	for f in "${FILES[@]}"; do
 		echo "[*] Trying to install $f"
-		ADBECHO=""
-		while [[ "$ADBECHO" != *"Success"* ]]; do
-			ADBECHO=$(adb install -r -d "$f" 2>&1)
-			if [[ "$ADBECHO" == *"INSTALL_FAILED_UPDATE_INCOMPATIBLE"* ]]; then
-				echo "$ADBECHO" | while read I; do echo "[*] $I"; done
-				Package=
-				for I in $ADBECHO; do
-					if [[ "$Package" == *"Package"* ]]; then
-						echo "[*] Need to uninstall $I first"
-						ADBECHO=$(adb uninstall $I 2>&1)
-						echo "$ADBECHO" | while read I; do echo "[*] $I"; done
-						ADBECHO=$(adb install -r -d "$f" 2>&1)
-						break
-					fi
-					Package=$I
-				done
-			fi
+		ADBECHO=$(adb install -r -d "$f" 2>&1)
+
+		if [[ "$ADBECHO" == *"INSTALL_FAILED_UPDATE_INCOMPATIBLE"* ]]; then
+			echo "$ADBECHO" | while read -r I; do echo "[*] $I"; done
+
+			Package=""
+			for I in $ADBECHO; do
+				if [[ "$Package" == *"Package"* ]]; then
+					echo "[*] Need to uninstall $I first"
+					adb uninstall "$I"
+					ADBECHO=$(adb install -r -d "$f" 2>&1)
+					break
+				fi
+				Package=$I
+			done
+		fi
+
+		echo "$ADBECHO" | while read -r I; do
+			echo "[*] $I"
 		done
-		echo "$ADBECHO" | while read I; do echo "[*] $I"; done
+
+		if [[ "$ADBECHO" != *"Success"* ]]; then
+			echo "[!] Failed to install $f"
+			return 1
+		fi
 	done
+
+	return 0
 }
 
 pushtoAVD() {
@@ -778,7 +801,7 @@ CopyMagiskToAVD() {
 	# If Magisk.zip file doesn't exist, just ignore it
 	if ( ! checkfile "$MAGISKZIP" -eq 0 ); then
 		echo "[-] Magisk installer Zip exists already"
-		pushtoAVD "$MAGISKZIP"
+		pushtoAVD "$MAGISKZIP" "Magisk.zip"
 	fi
 
 	# Proceed with ramdisk
@@ -2977,6 +3000,7 @@ CreateAndRootAVD() {
 	local SDKMANAGER=""
 	local AVDMANAGER=""
 	local EMULATOR=""
+	local ANDROIDCLI=""
 
 	# Try common paths
 	for toolpath in \
@@ -2989,6 +3013,7 @@ CreateAndRootAVD() {
 	do
 		[ -z "$SDKMANAGER" ] && [ -x "$toolpath/sdkmanager" ] && SDKMANAGER="$toolpath/sdkmanager"
 		[ -z "$AVDMANAGER" ] && [ -x "$toolpath/avdmanager" ] && AVDMANAGER="$toolpath/avdmanager"
+		[ -z "$ANDROIDCLI" ] && [ -x "$toolpath/android" ] && ANDROIDCLI="$toolpath/android"
 	done
 
 	for toolpath in \
@@ -3005,9 +3030,15 @@ CreateAndRootAVD() {
 	[ -z "$SDKMANAGER" ] && SDKMANAGER=$(which sdkmanager 2>/dev/null)
 	[ -z "$AVDMANAGER" ] && AVDMANAGER=$(which avdmanager 2>/dev/null)
 	[ -z "$EMULATOR" ] && EMULATOR=$(which emulator 2>/dev/null)
+	[ -z "$ANDROIDCLI" ] && ANDROIDCLI=$(which android 2>/dev/null)
 
 	if [ -z "$SDKMANAGER" ]; then
 		echo "[!] sdkmanager not found. Please install Android SDK Command-line Tools"
+		return 1
+	fi
+
+	if [ -z "$ANDROIDCLI" ]; then
+		echo "[!] android CLI not found. Please install Android SDK Command-line Tools"
 		return 1
 	fi
 	if [ -z "$AVDMANAGER" ]; then
@@ -3020,6 +3051,7 @@ CreateAndRootAVD() {
 	fi
 
 	echo "[-] sdkmanager: $SDKMANAGER"
+	echo "[-] android: $ANDROIDCLI"
 	echo "[-] avdmanager: $AVDMANAGER"
 	echo "[-] emulator: $EMULATOR"
 	echo ""
@@ -3032,7 +3064,7 @@ CreateAndRootAVD() {
 
 	# Check if system image is installed
 	echo "[*] Checking if system image is installed..."
-	local SYSIMG_INSTALLED=$("$SDKMANAGER" --list_installed 2>/dev/null | grep -c "$SYSIMG_PKG" 2>/dev/null || echo "0")
+	local SYSIMG_INSTALLED=$("$SDKMANAGER" --list_installed 2>/dev/null | grep -c "$SYSIMG_PATH" 2>/dev/null || echo "0")
 	SYSIMG_INSTALLED=$(echo "$SYSIMG_INSTALLED" | tr -d '[:space:]')
 	[ -z "$SYSIMG_INSTALLED" ] && SYSIMG_INSTALLED=0
 
@@ -3041,7 +3073,7 @@ CreateAndRootAVD() {
 		echo ""
 
 		# Check if it's available for download
-		local SYSIMG_AVAILABLE=$("$SDKMANAGER" --list 2>/dev/null | grep -c "$SYSIMG_PKG" 2>/dev/null || echo "0")
+		local SYSIMG_AVAILABLE=$("$SDKMANAGER" --list 2>/dev/null | grep -c "$SYSIMG_PATH" 2>/dev/null || echo "0")
 		SYSIMG_AVAILABLE=$(echo "$SYSIMG_AVAILABLE" | tr -d '[:space:]')
 		[ -z "$SYSIMG_AVAILABLE" ] && SYSIMG_AVAILABLE=0
 
@@ -3049,7 +3081,7 @@ CreateAndRootAVD() {
 			echo "[!] System image not available for download: $SYSIMG_PKG"
 			echo ""
 			echo "Available system images for API $API_LEVEL:"
-			"$SDKMANAGER" --list 2>/dev/null | grep "system-images;android-${API_LEVEL}" | head -10
+			"$SDKMANAGER" --list 2>/dev/null | grep "system-images/android-${API_LEVEL}" | head -10
 			return 1
 		fi
 
@@ -3059,7 +3091,7 @@ CreateAndRootAVD() {
 
 		# Accept licenses and download
 		yes | "$SDKMANAGER" --licenses > /dev/null 2>&1
-		"$SDKMANAGER" "$SYSIMG_PKG"
+		"$ANDROIDCLI" sdk install "$SYSIMG_PATH"
 
 		if [ $? -ne 0 ]; then
 			echo "[!] Failed to download system image"
