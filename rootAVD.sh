@@ -232,14 +232,33 @@ detect_ramdisk_compression_method() {
 
 runMagisk_to_Patch_fake_boot_img() {
 	am force-stop $PKG_NAME
-	echo "[-] Starting Magisk"
+	echo "[-] Starting Magisk app on the AVD"
 	monkey -p $PKG_NAME -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1
-	echo "[*] Install/Patch $FBI and hit Enter when done(max. 60s)"
-	read -t 60 proceed
-	case $proceed in
-		*)
-		;;
-	esac
+	echo ""
+	echo "============================================================"
+	echo "[!] MANUAL STEP — switch to the AVD window now:"
+	echo "    1. Open the Magisk app (it should already be in front)"
+	echo "    2. Tap 'Install'"
+	echo "    3. Choose 'Select and Patch a File'"
+	echo "    4. Pick: $FBI"
+	echo "    5. Tap 'Let's Go' and wait for 'All done!'"
+	echo "============================================================"
+	echo "[*] Auto-detecting patched file (timeout 300s, Ctrl-C to abort)"
+
+	PATCH_TIMEOUT=300
+	PATCH_WAIT=0
+	while [ $PATCH_WAIT -lt $PATCH_TIMEOUT ]; do
+		if ls $SDCARD/*magisk_patched* >/dev/null 2>&1; then
+			echo ""
+			echo "[+] magisk_patched file detected after ${PATCH_WAIT}s"
+			return 0
+		fi
+		printf "\r[*] Waiting for magisk_patched-*.img ... %ds / %ds" $PATCH_WAIT $PATCH_TIMEOUT
+		sleep 2
+		PATCH_WAIT=$(( PATCH_WAIT + 2 ))
+	done
+	echo ""
+	echo "[!] Timed out after ${PATCH_TIMEOUT}s without finding a patched file"
 }
 
 detecting_users() {
@@ -346,10 +365,65 @@ create_fake_boot_img() {
 	fi
 	echo "[!] $FBI created"
 
+	# Try non-interactive CLI patching first; fall back to GUI flow if it fails.
+	if patch_fakeboot_via_cli; then
+		return 0
+	fi
+
+	echo "[!] CLI patch failed — falling back to manual GUI flow"
 	InstallMagiskTemporarily
 	detecting_users
 	runMagisk_to_Patch_fake_boot_img
 	RemoveTemporarilyMagisk
+}
+
+# Run Magisk's bundled boot_patch.sh directly inside the emulator.
+# This is what the Magisk app calls under the hood when you tap
+# "Install -> Select and Patch a File", but invoked from shell so no GUI
+# interaction is needed. Output: $SDCARD/magisk_patched-CLI.img
+patch_fakeboot_via_cli() {
+	local BPS="$BASEDIR/assets/boot_patch.sh"
+	local UFS="$BASEDIR/assets/util_functions.sh"
+
+	if [ ! -f "$BPS" ] || [ ! -f "$UFS" ]; then
+		echo "[!] boot_patch.sh / util_functions.sh not found in extracted Magisk assets"
+		return 1
+	fi
+
+	echo "[*] Patching $FBI via CLI (Magisk boot_patch.sh, no GUI required)"
+
+	# boot_patch.sh expects to live next to the magisk binaries
+	cp "$BPS" "$BASEDIR/boot_patch.sh"
+	cp "$UFS" "$BASEDIR/util_functions.sh"
+	chmod 755 "$BASEDIR/boot_patch.sh" "$BASEDIR/util_functions.sh" 2>/dev/null
+
+	# Clean stale outputs from any previous attempt
+	rm -f "$BASEDIR/new-boot.img" "$BASEDIR/stock_boot.img"
+
+	(
+		cd "$BASEDIR" || exit 1
+		BOOTMODE=true \
+		KEEPVERITY="${KEEPVERITY:-true}" \
+		KEEPFORCEENCRYPT="${KEEPFORCEENCRYPT:-true}" \
+		PATCHVBMETAFLAG="${PATCHVBMETAFLAG:-false}" \
+		RECOVERYMODE="${RECOVERYMODE:-false}" \
+		sh ./boot_patch.sh "$FBI"
+	)
+	local RC=$?
+
+	if [ $RC -ne 0 ] || [ ! -f "$BASEDIR/new-boot.img" ]; then
+		echo "[!] boot_patch.sh failed (exit=$RC) or did not produce new-boot.img"
+		return 1
+	fi
+
+	local OUT="$SDCARD/magisk_patched-CLI.img"
+	cp "$BASEDIR/new-boot.img" "$OUT"
+	if [ -f "$OUT" ]; then
+		echo "[+] CLI patch succeeded: $OUT"
+		return 0
+	fi
+	echo "[!] Could not write $OUT"
+	return 1
 }
 
 unpack_patched_ramdisk_from_fake_boot_img() {
@@ -487,8 +561,7 @@ install_apps() {
 		done
 
 		if [[ "$ADBECHO" != *"Success"* ]]; then
-			echo "[!] Failed to install $f"
-			return 1
+			echo "[!] Install of $f did not succeed — continuing with next file"
 		fi
 	done
 
@@ -644,13 +717,25 @@ TestADB() {
 		fi
 	done
 
-	ADBWORKS=$(adb shell 'echo true' 2>/dev/null)
+	local ADB_ERR
+	ADB_ERR=$(mktemp)
+	ADBWORKS=$(adb shell 'echo true' 2>"$ADB_ERR")
 	if [ -z "$ADBWORKS" ]; then
 		echo "[!] no ADB connection possible"
+		if [ -s "$ADB_ERR" ]; then
+			echo "[!] adb error:"
+			sed 's/^/    /' "$ADB_ERR"
+		fi
+		echo "[!] Current devices:"
+		adb devices
+		echo "[!] Hints: device may be offline/unauthorized; if multiple devices,"
+		echo "[!]        export ANDROID_SERIAL=<emulator-XXXX> and re-run."
+		rm -f "$ADB_ERR"
 		exit
 	elif [[ "$ADBWORKS" == "true" ]]; then
 		echo "[*] ADB connection possible"
 	fi
+	rm -f "$ADB_ERR"
 }
 
 MakeBlueStacksRW() {
@@ -798,7 +883,13 @@ CopyMagiskToAVD() {
 	echo "[*] Creating the ADB working space"
 	adb shell mkdir $ADBBASEDIR
 
-	# If Magisk.zip file doesn't exist, just ignore it
+	# Ensure local Apps/ exists so post-patch `pullfromAVD "Magisk.apk" "Apps/"`
+	# doesn't silently drop the pulled file when the directory is absent.
+	mkdir -p "$ROOTAVD/Apps"
+
+	# If Magisk.zip file doesn't exist, just ignore it.
+	# Always push as "Magisk.zip" — the in-emulator script hardcodes that name,
+	# so when host selects Magisk30.zip (API >= 35) it must be renamed in transit.
 	if ( ! checkfile "$MAGISKZIP" -eq 0 ); then
 		echo "[-] Magisk installer Zip exists already"
 		pushtoAVD "$MAGISKZIP" "Magisk.zip"
@@ -3038,8 +3129,7 @@ CreateAndRootAVD() {
 	fi
 
 	if [ -z "$ANDROIDCLI" ]; then
-		echo "[!] android CLI not found. Please install Android SDK Command-line Tools"
-		return 1
+		echo "[-] android CLI not found - will fall back to sdkmanager for downloads"
 	fi
 	if [ -z "$AVDMANAGER" ]; then
 		echo "[!] avdmanager not found. Please install Android SDK Command-line Tools"
@@ -3051,10 +3141,31 @@ CreateAndRootAVD() {
 	fi
 
 	echo "[-] sdkmanager: $SDKMANAGER"
-	echo "[-] android: $ANDROIDCLI"
+	[ -n "$ANDROIDCLI" ] && echo "[-] android: $ANDROIDCLI"
 	echo "[-] avdmanager: $AVDMANAGER"
 	echo "[-] emulator: $EMULATOR"
 	echo ""
+
+	# Reconcile $ANDROIDHOME with the SDK that actually owns the tools.
+	# If $ANDROID_HOME (env) points to a stale path while the real tools live
+	# elsewhere, sdkmanager downloads into its own SDK root and our ramdisk
+	# lookup fails. Trust the tools' SDK root over the env var.
+	local TOOL_SDK_ROOT=""
+	case "$SDKMANAGER" in
+		*/cmdline-tools/*/bin/sdkmanager) TOOL_SDK_ROOT="${SDKMANAGER%/cmdline-tools/*}" ;;
+		*/cmdline-tools/bin/sdkmanager)   TOOL_SDK_ROOT="${SDKMANAGER%/cmdline-tools/bin/sdkmanager}" ;;
+		*/tools/bin/sdkmanager)           TOOL_SDK_ROOT="${SDKMANAGER%/tools/bin/sdkmanager}" ;;
+	esac
+
+	if [ -n "$TOOL_SDK_ROOT" ] && [ -d "$TOOL_SDK_ROOT" ] && [ "$TOOL_SDK_ROOT" != "$ANDROIDHOME" ]; then
+		echo "[!] SDK mismatch detected:"
+		echo "    ANDROIDHOME points to: $ANDROIDHOME"
+		echo "    sdkmanager belongs to: $TOOL_SDK_ROOT"
+		echo "[*] Switching ANDROIDHOME to $TOOL_SDK_ROOT (where the tools actually live)"
+		ANDROIDHOME="$TOOL_SDK_ROOT"
+		export ANDROIDHOME
+		echo ""
+	fi
 
 	# Build system image package name
 	local SYSIMG_PKG="system-images;android-${API_LEVEL};${VARIANT};${ARCH}"
@@ -3063,17 +3174,22 @@ CreateAndRootAVD() {
 	echo "[*] Target system image: $SYSIMG_PKG"
 
 	# Check if system image is installed
+	# Authoritative check: the ramdisk file must actually exist on disk.
+	# `sdkmanager --list_installed` can return stale/false positives.
 	echo "[*] Checking if system image is installed..."
-	local SYSIMG_INSTALLED=$("$SDKMANAGER" --list_installed 2>/dev/null | grep -c "$SYSIMG_PATH" 2>/dev/null || echo "0")
-	SYSIMG_INSTALLED=$(echo "$SYSIMG_INSTALLED" | tr -d '[:space:]')
-	[ -z "$SYSIMG_INSTALLED" ] && SYSIMG_INSTALLED=0
+	local SYSIMG_INSTALLED=0
+	if [ -d "$ANDROIDHOME/$SYSIMG_PATH" ]; then
+		if ls "$ANDROIDHOME/$SYSIMG_PATH"/ramdisk*.img >/dev/null 2>&1; then
+			SYSIMG_INSTALLED=1
+		fi
+	fi
 
 	if [ "$SYSIMG_INSTALLED" -eq 0 ]; then
-		echo "[!] System image not installed"
+		echo "[!] System image not installed (no ramdisk found in $SYSIMG_PATH)"
 		echo ""
 
 		# Check if it's available for download
-		local SYSIMG_AVAILABLE=$("$SDKMANAGER" --list 2>/dev/null | grep -c "$SYSIMG_PATH" 2>/dev/null || echo "0")
+		local SYSIMG_AVAILABLE=$("$SDKMANAGER" --list 2>/dev/null | grep -cE "$SYSIMG_PATH|$SYSIMG_PKG" 2>/dev/null || echo "0")
 		SYSIMG_AVAILABLE=$(echo "$SYSIMG_AVAILABLE" | tr -d '[:space:]')
 		[ -z "$SYSIMG_AVAILABLE" ] && SYSIMG_AVAILABLE=0
 
@@ -3081,7 +3197,7 @@ CreateAndRootAVD() {
 			echo "[!] System image not available for download: $SYSIMG_PKG"
 			echo ""
 			echo "Available system images for API $API_LEVEL:"
-			"$SDKMANAGER" --list 2>/dev/null | grep "system-images/android-${API_LEVEL}" | head -10
+			"$SDKMANAGER" --list 2>/dev/null | grep -E "system-images/android-${API_LEVEL}|system-images;android-${API_LEVEL}" | head -10
 			return 1
 		fi
 
@@ -3091,7 +3207,12 @@ CreateAndRootAVD() {
 
 		# Accept licenses and download
 		yes | "$SDKMANAGER" --licenses > /dev/null 2>&1
-		"$ANDROIDCLI" sdk install "$SYSIMG_PATH"
+
+		if [ -n "$ANDROIDCLI" ]; then
+			"$ANDROIDCLI" sdk install "$SYSIMG_PATH"
+		else
+			"$SDKMANAGER" "$SYSIMG_PKG"
+		fi
 
 		if [ $? -ne 0 ]; then
 			echo "[!] Failed to download system image"
@@ -3213,15 +3334,17 @@ AVDINI
 		echo "[-] AVD already exists"
 	fi
 
-	# Check if an emulator is already running
-	local RUNNING_EMUS=$(adb devices 2>/dev/null | grep -c "emulator" 2>/dev/null || echo "0")
-	RUNNING_EMUS=$(echo "$RUNNING_EMUS" | tr -d '[:space:]')
+	# Check if an emulator is already running and reachable.
+	# Only count emulators in "device" state — offline/unauthorized entries
+	# would pass the old substring check but `adb shell` will fail on them.
+	local RUNNING_EMUS=$(adb devices 2>/dev/null | awk '/^emulator-[0-9]+\tdevice$/ {c++} END {print c+0}')
 	[ -z "$RUNNING_EMUS" ] && RUNNING_EMUS=0
 	local NEED_TO_START=true
 
 	if [ "$RUNNING_EMUS" -gt 0 ]; then
 		echo ""
-		echo "[!] An emulator is already running"
+		echo "[!] An emulator is already online:"
+		adb devices | grep -E "^emulator-[0-9]+"
 		printf "Do you want to use the running emulator? [Y/n]: "
 		read -r use_running
 
@@ -3286,9 +3409,49 @@ AVDINI
 		fi
 	fi
 
-	# Wait a bit more for system to stabilize
-	echo "[*] Waiting for system to stabilize..."
-	sleep 5
+	# Verify ADB is actually reachable before proceeding.
+	# When reusing a running emulator (or even after our own boot wait),
+	# the device can still be in a transitional state where `adb shell` fails.
+	echo "[*] Verifying ADB connection..."
+	local ADB_READY_TIMEOUT=60
+	local ADB_READY_WAIT=0
+	local ADB_READY=false
+
+	# Count devices visible to adb. If more than one, adb shell will fail
+	# with "more than one device" unless ANDROID_SERIAL or -s is set.
+	local DEVICE_COUNT=$(adb devices 2>/dev/null | awk '/\tdevice$/ {c++} END {print c+0}')
+	[ -z "$DEVICE_COUNT" ] && DEVICE_COUNT=0
+	if [ "$DEVICE_COUNT" -gt 1 ] && [ -z "$ANDROID_SERIAL" ]; then
+		echo "[!] More than one ADB device is online:"
+		adb devices
+		echo "[!] Set ANDROID_SERIAL=<emulator-XXXX> to disambiguate, then re-run."
+		return 1
+	fi
+
+	while [ $ADB_READY_WAIT -lt $ADB_READY_TIMEOUT ]; do
+		local DEV_STATE=$(adb get-state 2>/dev/null || echo "offline")
+		if [ "$DEV_STATE" = "device" ]; then
+			local BOOT_COMPLETED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n')
+			if [ "$BOOT_COMPLETED" = "1" ]; then
+				if [ "$(adb shell echo ready 2>/dev/null | tr -d '\r\n')" = "ready" ]; then
+					ADB_READY=true
+					break
+				fi
+			fi
+		fi
+		printf "\r[*] Waiting for ADB ready... %ds / %ds" $ADB_READY_WAIT $ADB_READY_TIMEOUT
+		sleep 2
+		ADB_READY_WAIT=$((ADB_READY_WAIT + 2))
+	done
+	echo ""
+
+	if [ "$ADB_READY" != "true" ]; then
+		echo "[!] ADB is not reachable after ${ADB_READY_TIMEOUT}s. Diagnostics:"
+		adb devices
+		echo "[!] Try: adb kill-server && adb start-server, then re-run."
+		return 1
+	fi
+	echo "[+] ADB ready"
 
 	# Now run the rooting process
 	echo ""
@@ -3301,14 +3464,46 @@ AVDINI
 	# Check if ramdisk exists
 	if [ ! -f "$ANDROIDHOME/$RAMDISK_PATH" ]; then
 		echo "[!] Ramdisk not found at: $ANDROIDHOME/$RAMDISK_PATH"
-		# Try to find it
+		# Try to find it under the expected directory
 		local FOUND_RAMDISK=$(find "$ANDROIDHOME/$SYSIMG_PATH" -name "ramdisk*.img" 2>/dev/null | head -1)
 		if [ -n "$FOUND_RAMDISK" ]; then
 			RAMDISK_PATH="${FOUND_RAMDISK#$ANDROIDHOME/}"
 			echo "[*] Found ramdisk at: $RAMDISK_PATH"
 		else
-			echo "[!] Could not find ramdisk image"
-			return 1
+			echo "[!] System image directory is empty or missing: $ANDROIDHOME/$SYSIMG_PATH"
+			echo ""
+			printf "Download system image '$SYSIMG_PKG' now? [Y/n]: "
+			read -r dl_confirm
+			case "$dl_confirm" in
+				n|N)
+					echo "[!] Aborting: cannot proceed without ramdisk image"
+					return 1
+					;;
+			esac
+
+			echo "[*] Downloading system image: $SYSIMG_PKG"
+			echo "[*] This may take a while depending on your internet connection..."
+			echo ""
+			yes | "$SDKMANAGER" --licenses > /dev/null 2>&1
+			"$SDKMANAGER" "$SYSIMG_PKG"
+			if [ $? -ne 0 ]; then
+				echo "[!] sdkmanager failed to download system image"
+				return 1
+			fi
+
+			# Re-check after download
+			if [ -f "$ANDROIDHOME/$RAMDISK_PATH" ]; then
+				echo "[+] Ramdisk now present at: $RAMDISK_PATH"
+			else
+				FOUND_RAMDISK=$(find "$ANDROIDHOME/$SYSIMG_PATH" -name "ramdisk*.img" 2>/dev/null | head -1)
+				if [ -n "$FOUND_RAMDISK" ]; then
+					RAMDISK_PATH="${FOUND_RAMDISK#$ANDROIDHOME/}"
+					echo "[+] Found ramdisk at: $RAMDISK_PATH"
+				else
+					echo "[!] Download finished but no ramdisk image found — aborting"
+					return 1
+				fi
+			fi
 		fi
 	fi
 
