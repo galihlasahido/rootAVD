@@ -843,8 +843,21 @@ CopyMagiskToAVD() {
 
 	# Auto-select Magisk version based on Android API level
 	# Android 15+ (API 35+) requires Magisk v27+ (v30 recommended)
+	# Android 17+ (API 37+) adds Zygisk support only in Magisk v31+
 	HOST_API=$(echo "$1" | sed -n 's|.*android-\([0-9]*\)/.*|\1|p')
-	if [ -n "$HOST_API" ] && [ "$HOST_API" -ge 35 ] 2>/dev/null; then
+	if [ -n "$HOST_API" ] && [ "$HOST_API" -ge 37 ] 2>/dev/null; then
+		if [ -f "$ROOTAVD/Magisk31.zip" ]; then
+			MAGISKZIP=$ROOTAVD/Magisk31.zip
+			echo "[*] Android API $HOST_API detected - using Magisk v31 for compatibility"
+		elif [ -f "$ROOTAVD/Magisk30.zip" ]; then
+			MAGISKZIP=$ROOTAVD/Magisk30.zip
+			echo "[!] Android API $HOST_API detected but Magisk31.zip not found"
+			echo "[!] Falling back to Magisk v30 - Android 17 Zygisk features may be unavailable"
+		else
+			echo "[!] Android API $HOST_API detected but Magisk31.zip not found"
+			echo "[!] For Android 15+, Magisk v27+ is required. Using default Magisk.zip"
+		fi
+	elif [ -n "$HOST_API" ] && [ "$HOST_API" -ge 35 ] 2>/dev/null; then
 		if [ -f "$ROOTAVD/Magisk30.zip" ]; then
 			MAGISKZIP=$ROOTAVD/Magisk30.zip
 			echo "[*] Android API $HOST_API detected - using Magisk v30 for compatibility"

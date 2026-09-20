@@ -2,7 +2,7 @@
 ### A Script to root Android Studio AVDs with Magisk
 #### [newbit @ xda-developers](https://forum.xda-developers.com/m/newbit.1350876)
 
-**Supported Android Versions:** Android 7 - Android 16 (API 24-36)
+**Supported Android Versions:** Android 7 - Android 17 (API 24-37)
 
 A Script to...
 * root your Android Studio Virtual Device (AVD), with Magisk (Stable, Canary or Alpha)
@@ -289,6 +289,7 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 | Android 14      | 34        | v26.4+         | ✅ Magisk.zip |
 | Android 15      | 35        | v27+/v30       | ✅ Magisk30.zip |
 | Android 16      | 36        | v30+           | ✅ Magisk30.zip |
+| Android 17      | 37        | v31+           | ✅ Magisk31.zip |
 | Android 9 (Pie) | 28        | **Not Supported** | ❌ |
 
 #### General Notes
@@ -306,10 +307,12 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 ### Notes on Magisk Versions
 * **Automatic version selection**: The script automatically detects Android API level and selects the appropriate Magisk version:
 	* API < 35 (Android 14 and below): Uses `Magisk.zip` (v26.4)
-	* API >= 35 (Android 15+): Uses `Magisk30.zip` (v30.6) if available
+	* API >= 35 (Android 15-16): Uses `Magisk30.zip` (v30.6) if available
+	* API >= 37 (Android 17+): Uses `Magisk31.zip` (v31.0) if available, else falls back to `Magisk30.zip`
 * Bundled Magisk versions:
 	* `Magisk.zip` - v26.4 (for Android 7-14)
 	* `Magisk30.zip` - v30.6 (for Android 15-16)
+	* `Magisk31.zip` - v31.0 (for Android 17+, adds Zygisk support for API 37)
 * Replace with the Flavour/Version of your choice:
 	* Magisk from [topjohnwu](https://github.com/topjohnwu/magisk-files)
 	* Magisk Alpha from [vvb2060](https://xdaforums.com/t/discussion-magisk-alpha-public-released-fork-vvb2060.4424845/)
@@ -400,6 +403,14 @@ rootAVD.bat system-images\android-25\google_apis_playstore\armeabi-v7a\ramdisk.i
 </details>
 
 ### Change Logs
+#### [Sep 2026]
+* [General] - Added Android 17 (API 37) support
+* [General] - Added `Magisk31.zip` (v31.0) - auto-selected for API 37+, falls back to `Magisk30.zip` if not bundled
+* [rootAVD.sh] - Fixed `--create` on current Android SDK Command-line Tools (slash-style system-image paths, `android sdk install`)
+* [rootAVD.sh] - Fixed Magisk30.zip being pushed to the AVD under its own name instead of `Magisk.zip`, breaking Android 15+ patching
+* [rootAVD.sh] - Fixed `install_apps()` looping forever when the `Apps/` folder is missing, empty, or an install keeps failing
+* [rootAVD.sh] - `--create` no longer hard-requires the newer `android` CLI binary; falls back to `sdkmanager` when it's absent
+
 #### [Feb 2026]
 * [rootAVD.sh] - **NEW: Interactive AVD Selector** (`--interactive` or `-i`)
 	* Shows all available AVDs in a numbered list
