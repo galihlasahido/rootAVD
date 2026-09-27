@@ -519,7 +519,8 @@ checkfile() {
 install_apps() {
 	local APPDIR="$ROOTAVD/Apps"
 	local ADBECHO=""
-	local FILES=()
+	local f
+	local count=0
 
 	echo "[-] Install all APKs placed in the Apps folder"
 
@@ -528,16 +529,10 @@ install_apps() {
 		return 0
 	fi
 
-	shopt -s nullglob
-	FILES=("$APPDIR"/*.apk)
-	shopt -u nullglob
+	for f in "$APPDIR"/*.apk; do
+		[ -e "$f" ] || continue
+		count=$((count + 1))
 
-	if [ "${#FILES[@]}" -eq 0 ]; then
-		echo "[-] No APK files found in Apps folder - skipping"
-		return 0
-	fi
-
-	for f in "${FILES[@]}"; do
 		echo "[*] Trying to install $f"
 		ADBECHO=$(adb install -r -d "$f" 2>&1)
 
@@ -564,6 +559,10 @@ install_apps() {
 			echo "[!] Install of $f did not succeed — continuing with next file"
 		fi
 	done
+
+	if [ "$count" -eq 0 ]; then
+		echo "[-] No APK files found in Apps folder - skipping"
+	fi
 
 	return 0
 }
